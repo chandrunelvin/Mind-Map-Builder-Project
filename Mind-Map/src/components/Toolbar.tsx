@@ -1,14 +1,13 @@
-import React, { useState } from 'react';
-import { 
-  AppBar, 
-  Toolbar as MuiToolbar, 
-  IconButton, 
-  Typography, 
-  Box, 
+import React, { useState } from "react";
+import {
+  AppBar,
+  Toolbar as MuiToolbar,
+  IconButton,
+  Typography,
+  Box,
   Menu,
   MenuItem,
   Button,
-  TextField,
   Dialog,
   DialogActions,
   DialogContent,
@@ -16,8 +15,10 @@ import {
   DialogTitle,
   Tooltip,
   Divider,
-  Slide
-} from '@mui/material';
+  Fade,
+  ListItemIcon,
+  ListItemText,
+} from "@mui/material";
 import {
   ZoomIn,
   ZoomOut,
@@ -27,14 +28,21 @@ import {
   AddCircleOutline,
   Undo,
   Redo,
-  Delete,
-  Settings,
-  Help,
-  Close,
-  ViewInAr as ThemeIcon
-} from '@mui/icons-material';
-import { Brain, Eraser, HelpCircle, Palette } from 'lucide-react';
-import { Position } from '../types/MindMap';
+  DarkMode,
+  LightMode,
+  Palette,
+} from "@mui/icons-material";
+import { Brain, HelpCircle, Layout, Clock } from "lucide-react";
+import {
+  GitGraph, // Represents connections and branches
+  Network, // Good for showing interconnected nodes
+  Share2, // Represents connections spreading out
+  StretchHorizontal, // Shows expansion
+  Binary, // For hierarchical structures
+  Workflow, // For process flows
+} from "lucide-react";
+
+import { Position } from "../types/MindMap";
 
 interface ToolbarProps {
   scale: number;
@@ -46,6 +54,8 @@ interface ToolbarProps {
   onImportMap: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onUndoAction: () => void;
   onRedoAction: () => void;
+  onThemeChange: (theme: string) => void;
+  currentTheme: string;
   canUndo: boolean;
   canRedo: boolean;
 }
@@ -60,33 +70,42 @@ const Toolbar: React.FC<ToolbarProps> = ({
   onImportMap,
   onUndoAction,
   onRedoAction,
+  onThemeChange,
+  currentTheme,
   canUndo,
-  canRedo
+  canRedo,
 }) => {
   const [helpDialogOpen, setHelpDialogOpen] = useState(false);
   const [newMapDialogOpen, setNewMapDialogOpen] = useState(false);
-  const [themeMenuAnchor, setThemeMenuAnchor] = useState<null | HTMLElement>(null);
+  const [themeMenuAnchor, setThemeMenuAnchor] = useState<null | HTMLElement>(
+    null
+  );
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  // Zoom in handler
   const handleZoomIn = () => {
     onScaleChange(Math.min(scale + 0.1, 2.5));
   };
 
+  // Zoom out handler
   const handleZoomOut = () => {
     onScaleChange(Math.max(scale - 0.1, 0.5));
   };
 
+  // Create new map confirmation
   const handleNewMapConfirm = () => {
     onNewMap();
     setNewMapDialogOpen(false);
   };
 
+  // Trigger file input click for import
   const handleImportClick = () => {
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }
   };
 
+  // Theme menu handlers
   const handleThemeMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setThemeMenuAnchor(event.currentTarget);
   };
@@ -95,105 +114,264 @@ const Toolbar: React.FC<ToolbarProps> = ({
     setThemeMenuAnchor(null);
   };
 
+  // Get theme icon based on current theme
+  const getThemeIcon = () => {
+    switch (currentTheme) {
+      case "dark":
+        return <DarkMode fontSize="small" />;
+      case "light":
+        return <LightMode fontSize="small" />;
+      default:
+        return <Palette fontSize="small" />;
+    }
+  };
+
+  // Theme options
+  const themes = [
+    {
+      name: "Light Mode",
+      value: "light",
+      icon: <LightMode fontSize="small" />,
+    },
+    { name: "Dark Mode", value: "dark", icon: <DarkMode fontSize="small" /> },
+    {
+      name: "Gradient Blue",
+      value: "gradient-blue",
+      icon: <Palette fontSize="small" />,
+    },
+    {
+      name: "Gradient Purple",
+      value: "gradient-purple",
+      icon: <Palette fontSize="small" />,
+    },
+    {
+      name: "Gradient Sunset",
+      value: "gradient-sunset",
+      icon: <Palette fontSize="small" />,
+    },
+  ];
+
   return (
     <>
-      <AppBar position="static" color="default" elevation={2} sx={{ 
-        background: 'linear-gradient(90deg, #f8f9fa 0%, #e9ecef 100%)',
-      }}>
-        <MuiToolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <Brain size={28} color="#3949ab" strokeWidth={2} />
-            <Typography variant="h6" component="div" sx={{ ml: 1, fontWeight: 600, color: '#3949ab' }}>
-              Mind Map Builder
+      <AppBar
+        position="static"
+        color="default"
+        elevation={2}
+        sx={{
+          background:
+            currentTheme === "dark"
+              ? "linear-gradient(90deg, #343a40 0%, #212529 100%)"
+              : currentTheme.startsWith("gradient")
+              ? "linear-gradient(90deg, #e9ecef 0%, #f8f9fa 100%)"
+              : "linear-gradient(90deg, #f8f9fa 0%, #e9ecef 100%)",
+        }}
+      >
+        <MuiToolbar sx={{ display: "flex", justifyContent: "space-between" }}>
+          {/* Logo and title */}
+          <Box sx={{ display: "flex", alignItems: "center" }}>
+            {/* <Brain
+              size={28}
+              color={currentTheme === "dark" ? "#90caf9" : "#3949ab"}
+              strokeWidth={2}
+            /> */}
+            <Network
+              size={28}
+              color={currentTheme === "dark" ? "#90caf9" : "#3949ab"}
+              strokeWidth={2}
+            />
+
+            <Typography
+              variant="h6"
+              component="div"
+              sx={{
+                ml: 1,
+                fontWeight: 600,
+                color: currentTheme === "dark" ? "#90caf9" : "#3949ab",
+                textShadow:
+                  currentTheme === "dark"
+                    ? "0 0 10px rgba(144, 202, 249, 0.3)"
+                    : "none",
+              }}
+            >
+              Mind Mapper
             </Typography>
+            {/* <Workflow
+              size={28}
+              color={currentTheme === "dark" ? "#90caf9" : "#3949ab"}
+              strokeWidth={2}
+            /> */}
           </Box>
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          {/* Toolbar buttons */}
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
             <Tooltip title="New Mind Map">
-              <IconButton onClick={() => setNewMapDialogOpen(true)} color="primary">
+              <IconButton
+                onClick={() => setNewMapDialogOpen(true)}
+                color="primary"
+                sx={{ color: currentTheme === "dark" ? "#90caf9" : undefined }}
+              >
                 <AddCircleOutline />
               </IconButton>
             </Tooltip>
-            
+
             <Tooltip title="Undo">
               <span>
-                <IconButton onClick={onUndoAction} disabled={!canUndo} color="primary">
+                <IconButton
+                  onClick={onUndoAction}
+                  disabled={!canUndo}
+                  color="primary"
+                  sx={{
+                    color: currentTheme === "dark" ? "#90caf9" : undefined,
+                  }}
+                >
                   <Undo />
                 </IconButton>
               </span>
             </Tooltip>
-            
+
             <Tooltip title="Redo">
               <span>
-                <IconButton onClick={onRedoAction} disabled={!canRedo} color="primary">
+                <IconButton
+                  onClick={onRedoAction}
+                  disabled={!canRedo}
+                  color="primary"
+                  sx={{
+                    color: currentTheme === "dark" ? "#90caf9" : undefined,
+                  }}
+                >
                   <Redo />
                 </IconButton>
               </span>
             </Tooltip>
 
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-            
+            <Divider
+              orientation="vertical"
+              flexItem
+              sx={{
+                mx: 0.5,
+                backgroundColor:
+                  currentTheme === "dark"
+                    ? "rgba(255, 255, 255, 0.12)"
+                    : undefined,
+              }}
+            />
+
             <Tooltip title="Zoom In">
-              <IconButton onClick={handleZoomIn} color="primary">
+              <IconButton
+                onClick={handleZoomIn}
+                color="primary"
+                sx={{ color: currentTheme === "dark" ? "#90caf9" : undefined }}
+              >
                 <ZoomIn />
               </IconButton>
             </Tooltip>
-            
-            <Typography variant="body2" sx={{ 
-              fontWeight: 500, 
-              minWidth: '55px', 
-              textAlign: 'center',
-              bgcolor: 'rgba(0,0,0,0.05)',
-              p: '4px 8px',
-              borderRadius: 1
-            }}>
+
+            <Typography
+              variant="body2"
+              sx={{
+                fontWeight: 500,
+                minWidth: "55px",
+                textAlign: "center",
+                bgcolor:
+                  currentTheme === "dark"
+                    ? "rgba(255, 255, 255, 0.08)"
+                    : "rgba(0, 0, 0, 0.05)",
+                color: currentTheme === "dark" ? "#fff" : "inherit",
+                p: "4px 8px",
+                borderRadius: 1,
+              }}
+            >
               {Math.round(scale * 100)}%
             </Typography>
-            
+
             <Tooltip title="Zoom Out">
-              <IconButton onClick={handleZoomOut} color="primary">
+              <IconButton
+                onClick={handleZoomOut}
+                color="primary"
+                sx={{ color: currentTheme === "dark" ? "#90caf9" : undefined }}
+              >
                 <ZoomOut />
               </IconButton>
             </Tooltip>
-            
-            <Tooltip title="Reset View">
-              <IconButton onClick={onResetView} color="primary">
+
+            <Tooltip title="Center View">
+              <IconButton
+                onClick={onCenterView}
+                color="primary"
+                sx={{ color: currentTheme === "dark" ? "#90caf9" : undefined }}
+              >
                 <CenterFocusStrong />
               </IconButton>
             </Tooltip>
 
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-            
+            <Divider
+              orientation="vertical"
+              flexItem
+              sx={{
+                mx: 0.5,
+                backgroundColor:
+                  currentTheme === "dark"
+                    ? "rgba(255, 255, 255, 0.12)"
+                    : undefined,
+              }}
+            />
+
             <Tooltip title="Change Theme">
-              <IconButton onClick={handleThemeMenuOpen} color="primary">
-                <Palette size={20} />
+              <IconButton
+                onClick={handleThemeMenuOpen}
+                color="primary"
+                sx={{ color: currentTheme === "dark" ? "#90caf9" : undefined }}
+              >
+                {getThemeIcon()}
               </IconButton>
             </Tooltip>
-            
+
             <Tooltip title="Export Mind Map">
-              <IconButton onClick={onExportMap} color="primary">
+              <IconButton
+                onClick={onExportMap}
+                color="primary"
+                sx={{ color: currentTheme === "dark" ? "#90caf9" : undefined }}
+              >
                 <FileDownload />
               </IconButton>
             </Tooltip>
-            
+
             <Tooltip title="Import Mind Map">
-              <IconButton onClick={handleImportClick} color="primary">
+              <IconButton
+                onClick={handleImportClick}
+                color="primary"
+                sx={{ color: currentTheme === "dark" ? "#90caf9" : undefined }}
+              >
                 <FileUpload />
               </IconButton>
             </Tooltip>
-            
+
             <input
               ref={fileInputRef}
               type="file"
               accept=".json"
-              style={{ display: 'none' }}
+              style={{ display: "none" }}
               onChange={onImportMap}
             />
 
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-            
+            <Divider
+              orientation="vertical"
+              flexItem
+              sx={{
+                mx: 0.5,
+                backgroundColor:
+                  currentTheme === "dark"
+                    ? "rgba(255, 255, 255, 0.12)"
+                    : undefined,
+              }}
+            />
+
             <Tooltip title="Help">
-              <IconButton onClick={() => setHelpDialogOpen(true)} color="primary">
+              <IconButton
+                onClick={() => setHelpDialogOpen(true)}
+                color="primary"
+                sx={{ color: currentTheme === "dark" ? "#90caf9" : undefined }}
+              >
                 <HelpCircle size={20} />
               </IconButton>
             </Tooltip>
@@ -202,20 +380,37 @@ const Toolbar: React.FC<ToolbarProps> = ({
       </AppBar>
 
       {/* Help Dialog */}
-      <Dialog 
-        open={helpDialogOpen} 
+      <Dialog
+        open={helpDialogOpen}
         onClose={() => setHelpDialogOpen(false)}
         maxWidth="md"
+        TransitionComponent={Fade}
       >
-        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6">Mind Map Builder - Help</Typography>
+        <DialogTitle
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <HelpCircle size={20} />
+            <Typography variant="h6">Mind Mapper - Help</Typography>
+          </Box>
           <IconButton onClick={() => setHelpDialogOpen(false)} size="small">
-            <Close fontSize="small" />
+            <Box sx={{ fontSize: 20, fontWeight: "bold" }}>×</Box>
           </IconButton>
         </DialogTitle>
         <DialogContent>
           <DialogContentText component="div">
-            <Typography variant="subtitle1" fontWeight={600} gutterBottom>Keyboard Shortcuts</Typography>
+            <Typography
+              variant="subtitle1"
+              fontWeight={600}
+              gutterBottom
+              sx={{ display: "flex", alignItems: "center", gap: 1 }}
+            >
+              <Clock size={18} /> Keyboard Shortcuts
+            </Typography>
             <Box component="ul" sx={{ pl: 2 }}>
               <li>Ctrl + Mouse: Drag to pan the canvas</li>
               <li>Ctrl + Z: Undo last action</li>
@@ -223,19 +418,58 @@ const Toolbar: React.FC<ToolbarProps> = ({
               <li>Double-click node: Edit node text</li>
               <li>Delete key: Delete selected node</li>
             </Box>
-            
-            <Typography variant="subtitle1" fontWeight={600} gutterBottom sx={{ mt: 2 }}>Working with Nodes</Typography>
+
+            <Typography
+              variant="subtitle1"
+              fontWeight={600}
+              gutterBottom
+              sx={{ mt: 2, display: "flex", alignItems: "center", gap: 1 }}
+            >
+              <Layout size={18} /> Working with Nodes
+            </Typography>
             <Box component="ul" sx={{ pl: 2 }}>
               <li>Drag nodes to reposition them</li>
-              <li>Right-click on a node to open the context menu</li>
-              <li>Change colors, shapes, and add children from the context menu</li>
+              <li>Click the + button to add a child node</li>
+              <li>Click the Edit button to modify node properties</li>
               <li>Double-click on a node to edit its text</li>
               <li>Use the expand/collapse button to manage large mind maps</li>
+            </Box>
+
+            <Typography
+              variant="subtitle1"
+              fontWeight={600}
+              gutterBottom
+              sx={{ mt: 2, display: "flex", alignItems: "center", gap: 1 }}
+            >
+              <Box
+                component="span"
+                sx={{ display: "flex", alignItems: "center" }}
+              >
+                Connecting Nodes
+              </Box>
+            </Typography>
+            <Box component="ul" sx={{ pl: 2 }}>
+              <li>
+                Click the link icon in the canvas to enter connection mode
+              </li>
+              <li>
+                Click on a source node, then click on a target node to create a
+                connection
+              </li>
+              <li>You can add labels and custom colors to your connections</li>
+              <li>Connections persist when dragging nodes</li>
+              <li>Exit connection mode by clicking the link icon again</li>
             </Box>
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setHelpDialogOpen(false)} color="primary">Close</Button>
+          <Button
+            onClick={() => setHelpDialogOpen(false)}
+            color="primary"
+            variant="outlined"
+          >
+            Close
+          </Button>
         </DialogActions>
       </Dialog>
 
@@ -243,16 +477,22 @@ const Toolbar: React.FC<ToolbarProps> = ({
       <Dialog
         open={newMapDialogOpen}
         onClose={() => setNewMapDialogOpen(false)}
+        TransitionComponent={Fade}
       >
         <DialogTitle>Create New Mind Map</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Creating a new mind map will delete your current work. Do you want to continue?
+            Creating a new mind map will delete your current work. Do you want
+            to continue?
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setNewMapDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleNewMapConfirm} color="primary" variant="contained">
+          <Button
+            onClick={handleNewMapConfirm}
+            color="primary"
+            variant="contained"
+          >
             Create New
           </Button>
         </DialogActions>
@@ -263,26 +503,21 @@ const Toolbar: React.FC<ToolbarProps> = ({
         anchorEl={themeMenuAnchor}
         open={Boolean(themeMenuAnchor)}
         onClose={handleThemeMenuClose}
+        TransitionComponent={Fade}
       >
-        <MenuItem onClick={handleThemeMenuClose}>
-          <Box sx={{ width: 16, height: 16, bgcolor: '#f8f9fa', borderRadius: '50%', mr: 1, border: '1px solid #ddd' }} />
-          Light Mode
-        </MenuItem>
-        <MenuItem onClick={handleThemeMenuClose}>
-          <Box sx={{ width: 16, height: 16, bgcolor: '#343a40', borderRadius: '50%', mr: 1, border: '1px solid #ddd' }} />
-          Dark Mode
-        </MenuItem>
-        <MenuItem onClick={handleThemeMenuClose}>
-          <Box sx={{ 
-            width: 16, 
-            height: 16, 
-            background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)', 
-            borderRadius: '50%', 
-            mr: 1,
-            border: '1px solid #ddd'
-          }} />
-          Gradient Theme
-        </MenuItem>
+        {themes.map((theme) => (
+          <MenuItem
+            key={theme.value}
+            onClick={() => {
+              onThemeChange(theme.value);
+              handleThemeMenuClose();
+            }}
+            selected={currentTheme === theme.value}
+          >
+            <ListItemIcon>{theme.icon}</ListItemIcon>
+            <ListItemText>{theme.name}</ListItemText>
+          </MenuItem>
+        ))}
       </Menu>
     </>
   );

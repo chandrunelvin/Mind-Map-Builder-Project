@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useDrop } from 'react-dnd';
-import { Box, Paper, IconButton, Tooltip } from '@mui/material';
+import { Box, Paper, IconButton, Tooltip, Badge } from '@mui/material';
 import Xarrow, { Xwrapper } from 'react-xarrows';
 import { Link as LinkIcon } from 'lucide-react';
 import MindMapNode from './MindMapNode';
+import ConnectionModal from './ConnectionModal';
 import { MindMap, MindMapNode as MindMapNodeType, Position, Connection } from '../types/MindMap';
 
 interface MindMapCanvasProps {
@@ -14,6 +15,8 @@ interface MindMapCanvasProps {
   onAddChild: (parentId: string) => void;
   onDeleteNode: (nodeId: string, deleteChildren: boolean) => void;
   onPositionChange: (pos: Position) => void;
+  onUpdateConnections: (connections: Connection[]) => void;
+  currentTheme: string;
 }
 
 const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
@@ -24,6 +27,8 @@ const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   onAddChild,
   onDeleteNode,
   onPositionChange,
+  onUpdateConnections,
+  currentTheme,
 }) => {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [isDraggingCanvas, setIsDraggingCanvas] = useState(false);
@@ -31,9 +36,13 @@ const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
   const [startCanvasPos, setStartCanvasPos] = useState<Position>({ x: 0, y: 0 });
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionStart, setConnectionStart] = useState<string | null>(null);
+  const [connectionHover, setConnectionHover] = useState<string | null>(null);
+  const [connectionModalOpen, setConnectionModalOpen] = useState(false);
+  const [connectionParams, setConnectionParams] = useState<{start: string, end: string} | null>(null);
 
+  // Handle middle mouse button or ctrl+left click to drag the canvas
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || e.ctrlKey) {
+    if (e.button === 1 || (e.button === 0 && e.ctrlKey)) {
       setIsDraggingCanvas(true);
       setStartDragPos({ x: e.clientX, y: e.clientY });
       setStartCanvasPos({ ...position });
@@ -41,6 +50,7 @@ const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     }
   };
 
+  // Update canvas position while dragging
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isDraggingCanvas) {
       const dx = (e.clientX - startDragPos.x) / scale;
@@ -52,10 +62,12 @@ const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     }
   };
 
+  // End canvas dragging
   const handleMouseUp = () => {
     setIsDraggingCanvas(false);
   };
 
+  // Add global mouse up handler to ensure dragging stops even when mouse is released outside canvas
   useEffect(() => {
     const handleGlobalMouseUp = () => {
       setIsDraggingCanvas(false);
@@ -67,6 +79,7 @@ const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     };
   }, []);
 
+  // Configure react-dnd for dragging nodes
   const [, drop] = useDrop({
     accept: 'NODE',
     drop: (item: { id: string, left: number, top: number }, monitor) => {
@@ -81,6 +94,7 @@ const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     },
   });
 
+  // Center root node when creating a new mind map
   useEffect(() => {
     if (canvasRef.current && mindMap?.rootId) {
       const rootNode = mindMap.nodes[mindMap.rootId];
@@ -97,26 +111,76 @@ const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
     }
   }, [mindMap?.rootId, scale, onUpdateNode]);
 
+  // Handle node clicks for creating connections
   const handleNodeClick = (nodeId: string) => {
     if (isConnecting) {
-      if (connectionStart && connectionStart !== nodeId) {
-        const newConnection: Connection = {
-          start: connectionStart,
-          end: nodeId,
-          color: '#888',
-        };
+      if (connectionStart) {
+        // Don't connect node to itself
+        if (connectionStart === nodeId) {
+          setConnectionStart(null);
+          return;
+        }
         
-        const updatedConnections = [...(mindMap.connections || []), newConnection];
-        onUpdateNode(connectionStart, {
-          children: [...mindMap.nodes[connectionStart].children, nodeId],
-        });
+        // Check if connection already exists
+        const connectionExists = mindMap.connections.some(
+          conn => (conn.start === connectionStart && conn.end === nodeId) || 
+                 (conn.start === nodeId && conn.end === connectionStart)
+        );
         
-        setIsConnecting(false);
-        setConnectionStart(null);
+        if (!connectionExists) {
+          // Open modal to add connection details
+          setConnectionParams({ start: connectionStart, end: nodeId });
+          setConnectionModalOpen(true);
+        } else {
+          // Provide visual feedback for existing connection
+          setConnectionHover(nodeId);
+          setTimeout(() => {
+            setConnectionHover(null);
+            setConnectionStart(null);
+          }, 500);
+        }
+      } else {
+        // Set the starting node for connection
+        setConnectionStart(nodeId);
       }
     }
   };
 
+  // Toggle connection mode
+  const toggleConnectionMode = () => {
+    setIsConnecting(!isConnecting);
+    setConnectionStart(null);
+    setConnectionHover(null);
+  };
+
+  // Add a new connection with details from modal
+  const handleAddConnection = (label: string, color: string) => {
+    if (connectionParams) {
+      const newConnection: Connection = {
+        start: connectionParams.start,
+        end: connectionParams.end,
+        label: label || undefined,
+        color: color || (currentTheme === 'dark' ? '#90caf9' : '#3949ab'),
+      };
+      
+      const updatedConnections = [...(mindMap.connections || []), newConnection];
+      onUpdateConnections(updatedConnections);
+      
+      // Reset connection state
+      setConnectionParams(null);
+      setConnectionStart(null);
+      setConnectionModalOpen(false);
+    }
+  };
+
+  // Cancel adding a connection
+  const handleCancelConnection = () => {
+    setConnectionModalOpen(false);
+    setConnectionParams(null);
+    setConnectionStart(null);
+  };
+
+  // Render all connections between nodes
   const renderConnections = () => {
     if (!mindMap?.nodes) return [];
     
@@ -129,21 +193,24 @@ const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
 
       node.children.forEach(childId => {
         const childNode = mindMap.nodes[childId];
-        connections.push(
-          <Xarrow
-            key={`${nodeId}-${childId}`}
-            start={nodeId}
-            end={childId}
-            color="#888"
-            strokeWidth={2}
-            curveness={0.3}
-            animateDrawing={0.3}
-            path="smooth"
-            startAnchor="auto"
-            endAnchor="auto"
-          />
-        );
-        renderNodeConnections(childId);
+        if (childNode) {
+          connections.push(
+            <Xarrow
+              key={`${nodeId}-${childId}`}
+              start={nodeId}
+              end={childId}
+              color={currentTheme === 'dark' ? '#90caf9' : '#3949ab'}
+              strokeWidth={2}
+              curveness={0.3}
+              animateDrawing={0.3}
+              path="smooth"
+              startAnchor="auto"
+              endAnchor="auto"
+              headSize={5}
+            />
+          );
+          renderNodeConnections(childId);
+        }
       });
     };
 
@@ -158,25 +225,48 @@ const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
           key={`manual-${index}`}
           start={connection.start}
           end={connection.end}
-          color={connection.color || '#888'}
+          color={connection.color || (currentTheme === 'dark' ? '#90caf9' : '#3949ab')}
           strokeWidth={2}
           curveness={0.3}
           path="smooth"
           startAnchor="auto"
           endAnchor="auto"
+          headSize={5}
           labels={{ middle: connection.label }}
         />
       );
     });
     
+    // Render temporary connection when in connecting mode
+    if (isConnecting && connectionStart) {
+      connections.push(
+        <Xarrow
+          key="temp-connection"
+          start={connectionStart}
+          end={connectionHover || connectionStart}
+          color={currentTheme === 'dark' ? '#90caf9' : '#3949ab'}
+          strokeWidth={2}
+          curveness={0.3}
+          path="smooth"
+          startAnchor="auto"
+          endAnchor="auto"
+          headSize={5}
+          dashness={{ strokeLen: 10, nonStrokeLen: 10, animation: 1 }}
+        />
+      );
+    }
+    
     return connections;
   };
 
+  // Render all nodes recursively
   const renderNodes = () => {
     if (!mindMap?.nodes) return null;
     
     const renderNode = (nodeId: string, isVisible: boolean) => {
       const node = mindMap.nodes[nodeId];
+      if (!node) return null;
+      
       const parentNode = node.parentId ? mindMap.nodes[node.parentId] : null;
       const shouldShow = isVisible && (!parentNode || parentNode.isExpanded);
 
@@ -192,6 +282,13 @@ const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
               onClick={() => handleNodeClick(node.id)}
               isConnecting={isConnecting}
               isConnectionStart={connectionStart === node.id}
+              isConnectionHover={connectionHover === node.id}
+              onConnectionHover={(hover) => {
+                if (isConnecting && connectionStart && connectionStart !== node.id) {
+                  setConnectionHover(hover ? node.id : null);
+                }
+              }}
+              currentTheme={currentTheme}
             />
           )}
           {node.children.map(childId => renderNode(childId, shouldShow))}
@@ -199,7 +296,30 @@ const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
       );
     };
 
-    return renderNode(mindMap.rootId, true);
+    return mindMap.rootId ? renderNode(mindMap.rootId, true) : null;
+  };
+
+  // Get background styling based on theme
+  const getBackgroundStyle = () => {
+    switch (currentTheme) {
+      case 'dark':
+        return {
+          backgroundColor: '#212529',
+          backgroundImage: 'radial-gradient(#444 1px, transparent 1px)',
+        };
+      case 'gradient-blue':
+      case 'gradient-purple':
+      case 'gradient-sunset':
+        return {
+          backgroundColor: '#f8f9fa',
+          backgroundImage: 'radial-gradient(#ccc 1px, transparent 1px)',
+        };
+      default:
+        return {
+          backgroundColor: '#f8f9fa',
+          backgroundImage: 'radial-gradient(#ddd 1px, transparent 1px)',
+        };
+    }
   };
 
   return (
@@ -210,39 +330,57 @@ const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
         flex: 1,
         position: 'relative',
         overflow: 'hidden',
-        backgroundColor: '#f8f9fa',
-        backgroundImage: 'radial-gradient(#ddd 1px, transparent 1px)',
+        ...getBackgroundStyle(),
         backgroundSize: '20px 20px',
-        cursor: isDraggingCanvas ? 'grabbing' : 'default',
+        cursor: isDraggingCanvas ? 'grabbing' : isConnecting ? 'crosshair' : 'default',
+        transition: 'background-color 0.3s ease',
       }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
+      {/* Connection mode toggle button */}
       <Box
         sx={{
           position: 'absolute',
           top: 16,
           right: 16,
           zIndex: 1000,
-          backgroundColor: 'white',
-          borderRadius: '50%',
-          boxShadow: 2,
         }}
       >
         <Tooltip title={isConnecting ? "Cancel Connection" : "Connect Nodes"}>
-          <IconButton
-            onClick={() => {
-              setIsConnecting(!isConnecting);
-              setConnectionStart(null);
-            }}
-            color={isConnecting ? "primary" : "default"}
+          <Badge 
+            color="primary" 
+            variant="dot" 
+            invisible={!isConnecting}
+            overlap="circular"
           >
-            <LinkIcon size={20} />
-          </IconButton>
+            <IconButton
+              onClick={toggleConnectionMode}
+              color={isConnecting ? "primary" : "default"}
+              sx={{
+                backgroundColor: 'white',
+                borderRadius: '50%',
+                boxShadow: 2,
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  backgroundColor: isConnecting ? 'rgba(57, 73, 171, 0.1)' : 'rgba(0, 0, 0, 0.04)',
+                },
+                animation: isConnecting ? 'pulse 2s infinite' : 'none',
+                '@keyframes pulse': {
+                  '0%': { boxShadow: '0 0 0 0px rgba(57, 73, 171, 0.4)' },
+                  '70%': { boxShadow: '0 0 0 6px rgba(57, 73, 171, 0)' },
+                  '100%': { boxShadow: '0 0 0 0px rgba(57, 73, 171, 0)' },
+                },
+              }}
+            >
+              <LinkIcon size={20} />
+            </IconButton>
+          </Badge>
         </Tooltip>
       </Box>
       
+      {/* Canvas container */}
       <div 
         ref={canvasRef}
         style={{
@@ -269,6 +407,39 @@ const MindMapCanvas: React.FC<MindMapCanvasProps> = ({
           </Box>
         </Xwrapper>
       </div>
+      
+      {/* Connecting mode instructions */}
+      {isConnecting && connectionStart && (
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: 20,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: 'rgba(57, 73, 171, 0.9)',
+            color: 'white',
+            padding: '8px 16px',
+            borderRadius: 2,
+            zIndex: 1000,
+            boxShadow: 2,
+            animation: 'fadeIn 0.3s ease-in-out',
+            '@keyframes fadeIn': {
+              '0%': { opacity: 0, transform: 'translateX(-50%) translateY(10px)' },
+              '100%': { opacity: 1, transform: 'translateX(-50%) translateY(0)' },
+            },
+          }}
+        >
+          Select a node to connect
+        </Box>
+      )}
+
+      {/* Connection details modal */}
+      <ConnectionModal
+        open={connectionModalOpen}
+        onClose={handleCancelConnection}
+        onAddConnection={handleAddConnection}
+        currentTheme={currentTheme}
+      />
     </Paper>
   );
 };

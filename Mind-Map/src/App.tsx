@@ -1,368 +1,312 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { Box, CssBaseline, ThemeProvider, createTheme } from '@mui/material';
+import { 
+  CssBaseline, 
+  Box, 
+  ThemeProvider, 
+  createTheme, 
+  PaletteMode 
+} from '@mui/material';
 import Toolbar from './components/Toolbar';
 import MindMapCanvas from './components/MindMapCanvas';
-import { MindMap, MindMapNode, Position } from './types/MindMap';
+import { 
+  MindMap, 
+  Position, 
+  Connection, 
+  MindMapNode,
+  createEmptyMindMap 
+} from './types/MindMap';
 
-function App() {
+const App: React.FC = () => {
+  // Theme state
+  const [currentTheme, setCurrentTheme] = useState<string>('light');
+  
   // Mind map state
   const [mindMap, setMindMap] = useState<MindMap>(() => {
-    const stored = localStorage.getItem('mindMap');
-    if (stored) {
-      try {
-        return JSON.parse(stored);
-      } catch (e) {
-        console.error('Failed to parse stored mind map', e);
-      }
-    }
-    
-    // Default mind map
-    const rootId = 'root';
-    return {
-      nodes: {
-        [rootId]: {
-          id: rootId,
-          text: 'Central Idea',
-          parentId: null,
-          children: [],
-          color: '#C6DEF1',
-          position: { x: 0, y: 0 },
-          isExpanded: true,
-          shape: 'rectangle',
-        },
-      },
-      rootId,
-    };
+    // Try to load from localStorage
+    const savedMap = localStorage.getItem('mindMap');
+    return savedMap ? JSON.parse(savedMap) : createEmptyMindMap();
   });
-
-  // Canvas state
+  
+  // Canvas view state
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState<Position>({ x: 0, y: 0 });
-
-  // Undo/redo history
+  
+  // History for undo/redo
   const [history, setHistory] = useState<MindMap[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
-  const [canUndo, setCanUndo] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
-
-  // Initialize history with current state
+  
+  // Save to history when mindMap changes
   useEffect(() => {
-    if (history.length === 0) {
-      setHistory([mindMap]);
-      setHistoryIndex(0);
+    if (mindMap) {
+      // Save to localStorage
+      localStorage.setItem('mindMap', JSON.stringify(mindMap));
+      
+      // Add to history if it's a new state
+      if (historyIndex === history.length - 1) {
+        setHistory([...history, mindMap]);
+        setHistoryIndex(history.length);
+      } else if (historyIndex >= 0) {
+        // If we're in the middle of the history, truncate
+        setHistory([...history.slice(0, historyIndex + 1), mindMap]);
+        setHistoryIndex(historyIndex + 1);
+      }
     }
-  }, []);
-
-  // Update undo/redo availability
-  useEffect(() => {
-    setCanUndo(historyIndex > 0);
-    setCanRedo(historyIndex < history.length - 1);
-  }, [history, historyIndex]);
-
-  // Save to local storage when mind map changes
-  useEffect(() => {
-    localStorage.setItem('mindMap', JSON.stringify(mindMap));
   }, [mindMap]);
-
-  // Add to history when state changes
-  const addToHistory = useCallback((newState: MindMap) => {
-    setHistory(prev => {
-      // Remove any future states if we're in the middle of the history
-      const newHistory = prev.slice(0, historyIndex + 1);
-      // Add the new state
-      return [...newHistory, newState];
-    });
-    setHistoryIndex(prev => prev + 1);
-  }, [historyIndex]);
-
-  const handleUndo = useCallback(() => {
-    if (historyIndex > 0) {
-      setHistoryIndex(prev => prev - 1);
-      setMindMap(history[historyIndex - 1]);
-    }
-  }, [history, historyIndex]);
-
-  const handleRedo = useCallback(() => {
-    if (historyIndex < history.length - 1) {
-      setHistoryIndex(prev => prev + 1);
-      setMindMap(history[historyIndex + 1]);
-    }
-  }, [history, historyIndex]);
-
-  // Node manipulation
-  const handleAddChild = useCallback((parentId: string) => {
-    setMindMap((prev: MindMap) => {
-      const newId = `node-${Date.now()}`;
-      const parentNode = prev.nodes[parentId];
-      const childPosition = { 
-        x: parentNode.position.x + 200, 
-        y: parentNode.position.y + (parentNode.children.length * 100)
-      };
-      
-      const newMap = {
-        ...prev,
-        nodes: {
-          ...prev.nodes,
-          [newId]: {
-            id: newId,
-            text: 'New Idea',
-            parentId,
-            children: [],
-            color: parentNode.color,
-            position: childPosition,
-            isExpanded: true,
-            shape: parentNode.shape,
+  
+  // Create Material UI theme based on current theme
+  const theme = createTheme({
+    palette: {
+      mode: currentTheme === 'dark' ? 'dark' : 'light' as PaletteMode,
+      primary: {
+        main: currentTheme === 'dark' ? '#90caf9' : '#3949ab',
+      },
+      background: {
+        default: currentTheme === 'dark' ? '#121212' : '#f5f5f5',
+        paper: currentTheme === 'dark' ? '#1e1e1e' : '#ffffff',
+      },
+    },
+    components: {
+      MuiCssBaseline: {
+        styleOverrides: {
+          body: {
+            overflow: 'hidden',
           },
-          [parentId]: {
-            ...parentNode,
-            children: [...parentNode.children, newId],
-          },
-        },
-      };
-      
-      addToHistory(newMap);
-      return newMap;
-    });
-  }, [addToHistory]);
-
-  const handleUpdateNode = useCallback((nodeId: string, updates: Partial<MindMapNode>) => {
-    setMindMap((prev: MindMap) => {
-      // If updating parent, update the node's relation in the hierarchy
-      if ('parentId' in updates && updates.parentId !== prev.nodes[nodeId].parentId) {
-        const oldParentId = prev.nodes[nodeId].parentId;
-        const newParentId = updates.parentId;
-        
-        let newNodes = { ...prev.nodes };
-        
-        // Remove from old parent's children
-        if (oldParentId) {
-          const oldParent = newNodes[oldParentId];
-          newNodes[oldParentId] = {
-            ...oldParent,
-            children: oldParent.children.filter(id => id !== nodeId),
-          };
-        }
-        
-        // Add to new parent's children
-        if (newParentId) {
-          const newParent = newNodes[newParentId as string];
-          newNodes[newParentId as string] = {
-            ...newParent,
-            children: [...newParent.children, nodeId],
-          };
-        }
-        
-        // Update the node with its new parent
-        newNodes[nodeId] = {
-          ...newNodes[nodeId],
-          ...updates,
-        };
-        
-        const newMap = {
-          ...prev,
-          nodes: newNodes,
-        };
-        
-        addToHistory(newMap);
-        return newMap;
-      }
-      
-      // Simple update without changing parent
-      const newMap = {
-        ...prev,
-        nodes: {
-          ...prev.nodes,
-          [nodeId]: {
-            ...prev.nodes[nodeId],
-            ...updates,
-          },
-        },
-      };
-      
-      addToHistory(newMap);
-      return newMap;
-    });
-  }, [addToHistory]);
-
-  const handleDeleteNode = useCallback((nodeId: string, deleteChildren: boolean) => {
-    setMindMap((prev: MindMap) => {
-      // Prevent deleting the root node
-      if (nodeId === prev.rootId) {
-        return prev;
-      }
-      
-      const node = prev.nodes[nodeId];
-      const newNodes = { ...prev.nodes };
-      
-      if (deleteChildren) {
-        // Delete the node and all its children recursively
-        const deleteNodeAndChildren = (id: string) => {
-          const nodeToDelete = newNodes[id];
-          nodeToDelete.children.forEach(deleteNodeAndChildren);
-          delete newNodes[id];
-        };
-        deleteNodeAndChildren(nodeId);
-      } else {
-        // Move children to parent before deleting
-        if (node.parentId && node.children.length > 0) {
-          const parentNode = newNodes[node.parentId];
-          // Add node's children to its parent
-          node.children.forEach(childId => {
-            newNodes[childId] = {
-              ...newNodes[childId],
-              parentId: node.parentId,
-            };
-          });
-          // Update parent's children list
-          newNodes[node.parentId] = {
-            ...parentNode,
-            children: [
-              ...parentNode.children.filter(id => id !== nodeId),
-              ...node.children,
-            ],
-          };
-        }
-        // Remove the node
-        delete newNodes[nodeId];
-      }
-      
-      // Update parent's children list
-      if (node.parentId) {
-        const parent = newNodes[node.parentId];
-        newNodes[node.parentId] = {
-          ...parent,
-          children: parent.children.filter(id => id !== nodeId),
-        };
-      }
-      
-      const newMap = {
-        ...prev,
-        nodes: newNodes,
-      };
-      
-      addToHistory(newMap);
-      return newMap;
-    });
-  }, [addToHistory]);
-
-  // View management
-  const handleResetView = useCallback(() => {
-    setScale(1);
-    setPosition({ x: 0, y: 0 });
-  }, []);
-
-  const handleCenterView = useCallback(() => {
-    setPosition({ x: 0, y: 0 });
-  }, []);
-
-  // Mind map I/O
-  const handleNewMap = useCallback(() => {
-    const rootId = 'root';
-    const newMap = {
-      nodes: {
-        [rootId]: {
-          id: rootId,
-          text: 'Central Idea',
-          parentId: null,
-          children: [],
-          color: '#C6DEF1',
-          position: { x: 0, y: 0 },
-          isExpanded: true,
-          shape: 'rectangle',
         },
       },
-      rootId,
+    },
+  });
+  
+  // Update a node
+  const handleUpdateNode = (nodeId: string, updates: Partial<MindMapNode>) => {
+    if (!mindMap.nodes[nodeId]) return;
+    
+    setMindMap({
+      ...mindMap,
+      nodes: {
+        ...mindMap.nodes,
+        [nodeId]: {
+          ...mindMap.nodes[nodeId],
+          ...updates,
+        },
+      },
+      updatedAt: new Date().toISOString(),
+    });
+  };
+  
+  // Add a child node
+  const handleAddChild = (parentId: string) => {
+    if (!mindMap.nodes[parentId]) return;
+    
+    const newNodeId = `node-${Date.now()}`;
+    const parentNode = mindMap.nodes[parentId];
+    
+    // Create new node positioned relative to parent
+    const newNode: MindMapNode = {
+      id: newNodeId,
+      text: 'New Idea',
+      position: {
+        x: parentNode.position.x + 200,
+        y: parentNode.position.y + (parentNode.children.length * 100),
+      },
+      color: parentNode.color,
+      children: [],
+      parentId,
+      isExpanded: true,
     };
     
+    setMindMap({
+      ...mindMap,
+      nodes: {
+        ...mindMap.nodes,
+        [newNodeId]: newNode,
+        [parentId]: {
+          ...parentNode,
+          children: [...parentNode.children, newNodeId],
+          isExpanded: true,
+        },
+      },
+      updatedAt: new Date().toISOString(),
+    });
+  };
+  
+  // Delete a node
+  const handleDeleteNode = (nodeId: string, deleteChildren: boolean) => {
+    if (nodeId === mindMap.rootId || !mindMap.nodes[nodeId]) return;
+    
+    const nodesToDelete = new Set<string>();
+    
+    // Add the node itself
+    nodesToDelete.add(nodeId);
+    
+    // Recursively collect child nodes if deleteChildren is true
+    if (deleteChildren) {
+      const collectChildrenToDelete = (id: string) => {
+        const node = mindMap.nodes[id];
+        if (node) {
+          node.children.forEach(childId => {
+            nodesToDelete.add(childId);
+            collectChildrenToDelete(childId);
+          });
+        }
+      };
+      
+      collectChildrenToDelete(nodeId);
+    } else {
+      // Move children to parent
+      const node = mindMap.nodes[nodeId];
+      const parentId = node.parentId;
+      
+      if (parentId && mindMap.nodes[parentId]) {
+        node.children.forEach(childId => {
+          if (mindMap.nodes[childId]) {
+            mindMap.nodes[childId].parentId = parentId;
+          }
+        });
+      }
+    }
+    
+    // Update parent to remove reference to this node
+    const parentId = mindMap.nodes[nodeId].parentId;
+    if (parentId && mindMap.nodes[parentId]) {
+      mindMap.nodes[parentId].children = mindMap.nodes[parentId].children.filter(
+        id => id !== nodeId
+      );
+    }
+    
+    // Create new nodes object without deleted nodes
+    const updatedNodes = { ...mindMap.nodes };
+    nodesToDelete.forEach(id => {
+      delete updatedNodes[id];
+    });
+    
+    // Filter out connections that reference deleted nodes
+    const updatedConnections = mindMap.connections.filter(
+      conn => !nodesToDelete.has(conn.start) && !nodesToDelete.has(conn.end)
+    );
+    
+    setMindMap({
+      ...mindMap,
+      nodes: updatedNodes,
+      connections: updatedConnections,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+  
+  // Update connections
+  const handleUpdateConnections = (connections: Connection[]) => {
+    setMindMap({
+      ...mindMap,
+      connections,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+  
+  // Reset view
+  const handleResetView = () => {
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+  };
+  
+  // Center view on the root node
+  const handleCenterView = () => {
+    if (mindMap?.rootId && mindMap.nodes[mindMap.rootId]) {
+      const rootNode = mindMap.nodes[mindMap.rootId];
+      setPosition({
+        x: -rootNode.position.x + (window.innerWidth / (2 * scale) - 100),
+        y: -rootNode.position.y + (window.innerHeight / (2 * scale) - 50),
+      });
+    }
+  };
+  
+  // Create a new mind map
+  const handleNewMap = () => {
+    const newMap = createEmptyMindMap();
     setMindMap(newMap);
-    addToHistory(newMap);
     handleResetView();
-  }, [addToHistory, handleResetView]);
-
-  const handleExportMap = useCallback(() => {
+  };
+  
+  // Export mind map as JSON
+  const handleExportMap = () => {
     const dataStr = JSON.stringify(mindMap, null, 2);
     const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
     
-    const exportFileDefaultName = `mindmap-${new Date().toISOString().slice(0, 10)}.json`;
+    const exportFileDefaultName = `mindmap-${mindMap.name.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.json`;
     
     const linkElement = document.createElement('a');
     linkElement.setAttribute('href', dataUri);
     linkElement.setAttribute('download', exportFileDefaultName);
     linkElement.click();
-  }, [mindMap]);
-
-  const handleImportMap = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+  };
+  
+  // Import mind map from JSON
+  const handleImportMap = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const imported = JSON.parse(e.target?.result as string);
-        setMindMap(imported);
-        addToHistory(imported);
-        handleResetView();
+        const importedMap = JSON.parse(e.target?.result as string);
+        if (importedMap.nodes && importedMap.rootId) {
+          setMindMap(importedMap);
+          handleResetView();
+        } else {
+          alert('Invalid mind map file format');
+        }
       } catch (error) {
-        console.error('Error importing mind map:', error);
-        alert('Invalid mind map file');
+        alert('Failed to parse the imported file');
+        console.error(error);
       }
     };
     reader.readAsText(file);
     
-    // Reset the file input
+    // Clear the input to allow importing the same file again
     event.target.value = '';
-  }, [addToHistory, handleResetView]);
-
-  // Theme
-  const theme = createTheme({
-    palette: {
-      primary: {
-        main: '#3949ab',
-      },
-      secondary: {
-        main: '#00897b',
-      },
-      background: {
-        default: '#f5f5f5',
-      },
-    },
-    typography: {
-      fontFamily: '"Poppins", "Roboto", "Helvetica", "Arial", sans-serif',
-    },
-    components: {
-      MuiButton: {
-        styleOverrides: {
-          root: {
-            textTransform: 'none',
-            borderRadius: 8,
-          },
-        },
-      },
-      MuiPaper: {
-        styleOverrides: {
-          rounded: {
-            borderRadius: 12,
-          },
-        },
-      },
-    },
-  });
-
+  };
+  
+  // Undo last action
+  const handleUndo = () => {
+    if (historyIndex > 0) {
+      setHistoryIndex(historyIndex - 1);
+      setMindMap(history[historyIndex - 1]);
+    }
+  };
+  
+  // Redo action
+  const handleRedo = () => {
+    if (historyIndex < history.length - 1) {
+      setHistoryIndex(historyIndex + 1);
+      setMindMap(history[historyIndex + 1]);
+    }
+  };
+  
+  // Change theme
+  const handleThemeChange = (theme: string) => {
+    setCurrentTheme(theme);
+    localStorage.setItem('theme', theme);
+  };
+  
+  // Load theme from localStorage on initial render
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+      setCurrentTheme(savedTheme);
+    }
+  }, []);
+  
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <DndProvider backend={HTML5Backend}>
-        <Box 
-          sx={{ 
-            height: '100vh',
-            width: '100vw',
-            display: 'flex', 
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }}
-        >
+        <Box sx={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          height: '100vh',
+          overflow: 'hidden',
+          bgcolor: theme.palette.background.default
+        }}>
           <Toolbar
             scale={scale}
             onScaleChange={setScale}
@@ -373,8 +317,10 @@ function App() {
             onImportMap={handleImportMap}
             onUndoAction={handleUndo}
             onRedoAction={handleRedo}
-            canUndo={canUndo}
-            canRedo={canRedo}
+            onThemeChange={handleThemeChange}
+            currentTheme={currentTheme}
+            canUndo={historyIndex > 0}
+            canRedo={historyIndex < history.length - 1}
           />
           
           <MindMapCanvas
@@ -385,11 +331,13 @@ function App() {
             onAddChild={handleAddChild}
             onDeleteNode={handleDeleteNode}
             onPositionChange={setPosition}
+            onUpdateConnections={handleUpdateConnections}
+            currentTheme={currentTheme}
           />
         </Box>
       </DndProvider>
     </ThemeProvider>
   );
-}
+};
 
 export default App;
